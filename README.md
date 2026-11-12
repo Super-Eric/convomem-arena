@@ -57,6 +57,29 @@ uv run vf-run convomem-arena -n 6 -r 1 -m <model> \
 
 `-n 6` already covers all six categories, because tasks are interleaved across categories ([why](#ordering-and-laziness)).
 
+**No API key? Run it fully local against Ollama instead**, using `qwen3:30b-a3b` as both
+the agent and the judge model (verified working end to end — 6/6, mean reward 1.000 on
+the smoke test below):
+
+```bash
+# Ollama must be serving qwen3:30b-a3b at 127.0.0.1:11434 first:
+#   ollama pull qwen3:30b-a3b && ollama run qwen3:30b-a3b "reply with one word: ok"
+
+export OLLAMA_FAKE_KEY=unused   # value is ignored by Ollama; vf-run just needs the var set
+
+uv run vf-run convomem-arena -n 6 -r 1 -m qwen3:30b-a3b \
+  --client.base-url http://127.0.0.1:11434/v1 --client.api-key-var OLLAMA_FAKE_KEY \
+  --env.agent.harness.id null --env.agent.runtime.type subprocess \
+  --env.taskset.context-sizes 10 \
+  --env.taskset.task.judge.base-url http://127.0.0.1:11434/v1 \
+  --env.taskset.task.judge.api-key-var OLLAMA_FAKE_KEY \
+  --env.taskset.task.judge.model qwen3:30b-a3b
+```
+
+A 30B model judging its own transcript is weaker on the rubric-graded categories
+(`preferences`, `implicit_connections`) than a frontier judge — fine for a smoke test,
+be skeptical of absolute scores there.
+
 ---
 
 ## How this fits into verifiers, prime-envs, and the Hub
