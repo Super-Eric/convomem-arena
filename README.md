@@ -19,21 +19,22 @@ Answers are graded by **ConvoMem's official RIGHT/WRONG LLM judges**, using the 
 ## Contents
 
 1. [Quick start](#quick-start)
-2. [How this fits into verifiers, prime-envs, and the Hub](#how-this-fits-into-verifiers-prime-envs-and-the-hub)
-3. [The dataset](#the-dataset)
-4. [How a task is built](#how-a-task-is-built)
-5. [Memory modes in detail](#memory-modes-in-detail)
-6. [Scoring](#scoring)
-7. [Configuration reference](#configuration-reference)
-8. [Running evaluations](#running-evaluations)
-9. [Reading results](#reading-results)
-10. [Package layout and architecture](#package-layout-and-architecture)
-11. [Development and testing](#development-and-testing)
-12. [Publishing to the Environments Hub](#publishing-to-the-environments-hub)
-13. [Design decisions](#design-decisions)
-14. [Limitations and caveats](#limitations-and-caveats)
-15. [Troubleshooting](#troubleshooting)
-16. [Citation and license](#citation-and-license)
+2. [Running against a local Vellum assistant](#running-against-a-local-vellum-assistant)
+3. [How this fits into verifiers, prime-envs, and the Hub](#how-this-fits-into-verifiers-prime-envs-and-the-hub)
+4. [The dataset](#the-dataset)
+5. [How a task is built](#how-a-task-is-built)
+6. [Memory modes in detail](#memory-modes-in-detail)
+7. [Scoring](#scoring)
+8. [Configuration reference](#configuration-reference)
+9. [Running evaluations](#running-evaluations)
+10. [Reading results](#reading-results)
+11. [Package layout and architecture](#package-layout-and-architecture)
+12. [Development and testing](#development-and-testing)
+13. [Publishing to the Environments Hub](#publishing-to-the-environments-hub)
+14. [Design decisions](#design-decisions)
+15. [Limitations and caveats](#limitations-and-caveats)
+16. [Troubleshooting](#troubleshooting)
+17. [Citation and license](#citation-and-license)
 
 ---
 
@@ -79,6 +80,67 @@ uv run vf-run convomem-arena -n 6 -r 1 -m qwen3:30b-a3b \
 A 30B model judging its own transcript is weaker on the rubric-graded categories
 (`preferences`, `implicit_connections`) than a frontier judge — fine for a smoke test,
 be skeptical of absolute scores there.
+
+---
+
+## Running against a local Vellum assistant
+
+The Ollama path above works because Ollama serves a real OpenAI-compatible
+`/v1/chat/completions` endpoint. A locally hatched [Vellum](https://vellum.ai) assistant
+does **not** expose anything like that — its closest equivalent is a synchronous,
+single-shot CLI/IPC call (`assistant llm send`, aka `assistant inference send`) with its
+own `{message, systemPrompt?, model?, ...}` shape, not OpenAI's `{model, messages}`.
+`vf-run --client.base-url` can't point at it directly.
+
+`scripts/vellum_adapter.py` bridges the gap: a small, dependency-free (stdlib-only)
+local HTTP server that speaks OpenAI's `/v1/chat/completions` on the outside and shells
+out to `assistant llm send --json` on the inside, translating the response back into an
+OpenAI-shaped JSON body.
+
+**Scope — read before using:**
+- Only convomem-arena's `context` memory mode is supported. `assistant llm send` has no
+  `tools` parameter, so it cannot do real tool calls — don't point `tools` mode at it.
+- Each request blocks on one subprocess hitting one local daemon; there's no real
+  parallelism behind this adapter. Run `vf-run` with a low `--max-concurrent` against it
+  (e.g. `-c 1` or `-c 2`), not the default `128`.
+- `assistant llm send` does not necessarily use your instance's everyday chat
+  `activeProfile` — it can fall back to a different, advisor-oriented profile that needs
+  a connection you may not have configured (seen locally: it defaulted to an Anthropic
+  profile and failed with `provider_connection "..." not found`, even though the
+  instance's real chat profile was a working, keyless Ollama one). If you hit that, check
+  `assistant config get llm` for a profile that IS configured and set `VELLUM_PROFILE` to
+  its name — see below.
+- **Verified working end to end** — 6/6, mean reward 1.000 — using a local Ollama-backed
+  Vellum profile (`qwen3:30b-a3b`) as both the agent (through this adapter) and the judge.
+
+```bash
+# 1. Have a hatched Vellum instance with a working model profile. A keyless local one is
+#    easiest to get working for this, e.g.:
+#      assistant config set services.inference.provider ollama   # only if you don't
+#      assistant config set services.inference.model qwen3:30b-a3b   # already have one
+#    then confirm which profile name is actually configured and keyless:
+#      assistant config get llm   # look for a profile with "provider": "ollama"
+
+# 2. Point the adapter at that instance and your vellum-assistant checkout:
+export ASSISTANT_IPC_SOCKET_DIR=...     # same vars your shell already uses to talk
+export VELLUM_WORKSPACE_DIR=...         # to the hatched instance (e.g. via a `vellum-env` helper)
+export VELLUM_ASSISTANT_DIR=/path/to/vellum-assistant/assistant   # dir containing src/index.ts
+export VELLUM_PROFILE=qwen-local        # the keyless profile name from step 1
+
+# 3. Start the adapter (separate terminal, left running):
+python3 scripts/vellum_adapter.py       # listens on http://127.0.0.1:8800/v1
+
+# 4. Run convomem-arena against it. The adapter only stands in for the *agent* model —
+#    you still need a judge endpoint (PRIME_API_KEY, or a local judge as in the Ollama
+#    example above).
+export VELLUM_FAKE_KEY=unused   # value is ignored; vf-run just needs the var set
+export PRIME_API_KEY=...
+
+uv run vf-run convomem-arena -n 6 -r 1 -m vellum -c 1 \
+  --client.base-url http://127.0.0.1:8800/v1 --client.api-key-var VELLUM_FAKE_KEY \
+  --env.agent.harness.id null --env.agent.runtime.type subprocess \
+  --env.taskset.context-sizes 10
+```
 
 ---
 
