@@ -103,25 +103,29 @@ OpenAI-shaped JSON body.
 - Each request blocks on one subprocess hitting one local daemon; there's no real
   parallelism behind this adapter. Run `vf-run` with a low `--max-concurrent` against it
   (e.g. `-c 1` or `-c 2`), not the default `128`.
-- Whichever model/provider your target Vellum instance is already configured to use is
-  what actually answers. Getting that instance into a working state (a configured
-  credential/provider under `assistant config` / `assistant credentials`) is a Vellum
-  setup concern, independent of this adapter and outside convomem-arena's scope.
-- This adapter's own plumbing (HTTP in → CLI shell-out → JSON parse → OpenAI-shaped
-  response, including correctly surfacing real `assistant llm send` error payloads as
-  OpenAI-style error responses) has been verified end to end. A full green scoring run
-  additionally requires your own Vellum instance to have a working provider configured —
-  that part depends on your setup and isn't something this script can verify for you.
+- `assistant llm send` does not necessarily use your instance's everyday chat
+  `activeProfile` — it can fall back to a different, advisor-oriented profile that needs
+  a connection you may not have configured (seen locally: it defaulted to an Anthropic
+  profile and failed with `provider_connection "..." not found`, even though the
+  instance's real chat profile was a working, keyless Ollama one). If you hit that, check
+  `assistant config get llm` for a profile that IS configured and set `VELLUM_PROFILE` to
+  its name — see below.
+- **Verified working end to end** — 6/6, mean reward 1.000 — using a local Ollama-backed
+  Vellum profile (`qwen3:30b-a3b`) as both the agent (through this adapter) and the judge.
 
 ```bash
-# 1. Have a hatched Vellum instance with a working model provider already configured.
-#    (Vellum's own setup — see `assistant config get services.inference` /
-#    `assistant credentials list` inside your vellum-assistant checkout.)
+# 1. Have a hatched Vellum instance with a working model profile. A keyless local one is
+#    easiest to get working for this, e.g.:
+#      assistant config set services.inference.provider ollama   # only if you don't
+#      assistant config set services.inference.model qwen3:30b-a3b   # already have one
+#    then confirm which profile name is actually configured and keyless:
+#      assistant config get llm   # look for a profile with "provider": "ollama"
 
 # 2. Point the adapter at that instance and your vellum-assistant checkout:
 export ASSISTANT_IPC_SOCKET_DIR=...     # same vars your shell already uses to talk
 export VELLUM_WORKSPACE_DIR=...         # to the hatched instance (e.g. via a `vellum-env` helper)
 export VELLUM_ASSISTANT_DIR=/path/to/vellum-assistant/assistant   # dir containing src/index.ts
+export VELLUM_PROFILE=qwen-local        # the keyless profile name from step 1
 
 # 3. Start the adapter (separate terminal, left running):
 python3 scripts/vellum_adapter.py       # listens on http://127.0.0.1:8800/v1

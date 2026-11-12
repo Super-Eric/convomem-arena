@@ -30,11 +30,20 @@ Scope / limitations (read before using):
     configuration. If the instance has no working provider configured,
     `assistant llm send` will return `{"ok": false, "error": ...}` and this
     adapter will surface that as an OpenAI-style error response.
+  - `assistant llm send` does NOT necessarily use your instance's normal chat
+    `activeProfile`. It can fall back to a different, advisor-oriented profile
+    (e.g. `quality-optimized`) that may need a connection you haven't
+    configured, even if your everyday chat profile works fine. If you hit
+    `provider_connection "..." not found`, check `assistant config get llm`
+    for an `activeProfile` that IS configured (keyless profiles backed by
+    Ollama are easiest), and set `VELLUM_PROFILE` to its name below.
 
 Usage:
     export ASSISTANT_IPC_SOCKET_DIR=...   # from the `vellum-env` shell helper,
     export VELLUM_WORKSPACE_DIR=...       # or however your hatch resolves its socket
     export VELLUM_ASSISTANT_DIR=/path/to/vellum-assistant-saj/assistant
+    export VELLUM_PROFILE=qwen-local      # optional: force --profile <name> on each call
+    export VELLUM_MODEL=qwen3:30b-a3b     # optional: force --model <id> on each call
 
     python3 scripts/vellum_adapter.py       # listens on 127.0.0.1:8800 by default
 
@@ -59,6 +68,7 @@ ADAPTER_PORT = int(os.environ.get("VELLUM_ADAPTER_PORT", "8800"))
 ASSISTANT_DIR = os.environ.get("VELLUM_ASSISTANT_DIR")
 BUN_BIN = os.environ.get("BUN_BIN", "bun")
 VELLUM_MODEL_OVERRIDE = os.environ.get("VELLUM_MODEL")  # optional: force a --model
+VELLUM_PROFILE_OVERRIDE = os.environ.get("VELLUM_PROFILE")  # optional: force a --profile
 SEND_TIMEOUT_SECONDS = float(os.environ.get("VELLUM_ADAPTER_TIMEOUT", "120"))
 
 
@@ -90,6 +100,8 @@ def _call_vellum(message: str, system_prompt: str) -> dict:
     cmd = [BUN_BIN, "run", "src/index.ts", "llm", "send", "--json"]
     if system_prompt:
         cmd += ["--system-prompt", system_prompt]
+    if VELLUM_PROFILE_OVERRIDE:
+        cmd += ["--profile", VELLUM_PROFILE_OVERRIDE]
     if VELLUM_MODEL_OVERRIDE:
         cmd += ["--model", VELLUM_MODEL_OVERRIDE]
     cmd += [message]
@@ -132,6 +144,37 @@ class Handler(BaseHTTPRequestHandler):
     def _openai_error(self, status: int, message: str, error_type: str = "vellum_adapter_error") -> None:
         self._send_json(status, {"error": {"message": message, "type": error_type}})
 
+    def _send_sse_completion(
+        self, completion_id: str, model: str, content: str, prompt_tokens: int, completion_tokens: int
+    ) -> None:
+        """Fake a streamed response: OpenAI clients (incl. the one `vf-run` uses)
+        default to `stream=True` and parse the reply as SSE `chat.completion.chunk`
+        events terminated by `data: [DONE]`. We don't have a real token stream from
+        `assistant llm send` (it's single-shot), so emit the whole answer as one
+        chunk, then the stop chunk, then the terminator — the shape a client
+        expects, just not actually incremental.
+        """
+        created = int(time.time())
+
+        def _chunk(delta: dict, finish_reason: str | None) -> bytes:
+            payload = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+            }
+            return f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(_chunk({"role": "assistant", "content": content}, None))
+        self.wfile.write(_chunk({}, "stop"))
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
+
     def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler API)
         if self.path.rstrip("/") != "/v1/chat/completions":
             self._openai_error(404, f"no such route: {self.path}", "not_found")
@@ -169,15 +212,23 @@ class Handler(BaseHTTPRequestHandler):
         usage = result.get("usage") or {}
         prompt_tokens = usage.get("inputTokens", 0)
         completion_tokens = usage.get("outputTokens", 0)
+        completion_id = f"chatcmpl-vellum-{uuid.uuid4().hex[:24]}"
+        model = result.get("model") or request.get("model") or "vellum"
+        content = result.get("response", "")
+
+        if request.get("stream"):
+            self._send_sse_completion(completion_id, model, content, prompt_tokens, completion_tokens)
+            return
+
         response = {
-            "id": f"chatcmpl-vellum-{uuid.uuid4().hex[:24]}",
+            "id": completion_id,
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": result.get("model") or request.get("model") or "vellum",
+            "model": model,
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": result.get("response", "")},
+                    "message": {"role": "assistant", "content": content},
                     "finish_reason": "stop",
                 }
             ],
@@ -212,6 +263,7 @@ def main() -> None:
     print(f"[vellum-adapter] VELLUM_ASSISTANT_DIR={ASSISTANT_DIR}")
     print(f"[vellum-adapter] ASSISTANT_IPC_SOCKET_DIR={os.environ.get('ASSISTANT_IPC_SOCKET_DIR')}")
     print(f"[vellum-adapter] VELLUM_WORKSPACE_DIR={os.environ.get('VELLUM_WORKSPACE_DIR')}")
+    print(f"[vellum-adapter] VELLUM_PROFILE={VELLUM_PROFILE_OVERRIDE!r}  VELLUM_MODEL={VELLUM_MODEL_OVERRIDE!r}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
