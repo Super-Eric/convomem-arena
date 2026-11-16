@@ -142,6 +142,53 @@ uv run vf-run convomem-arena -n 6 -r 1 -m vellum -c 1 \
   --env.taskset.context-sizes 10
 ```
 
+### Evaluating Vellum's own memory (`vellum_eval`)
+
+The adapter above only tests Vellum's *model* on a history placed in the prompt.
+`convomem_arena/vellum_eval/` tests Vellum's **memory pipeline**: a local Vellum
+instance lives through a ConvoMem persona's conversations, builds its memory its own
+way, and then answers the questions from that memory.
+
+1. **plan:** picks N questions per category for one persona and merges their evidence
+   conversations, plus filler from the same persona, into one time-ordered history
+   (one day apart). One memory then serves every question.
+2. **build:**
+   - `assistant conversations import` loads the history
+   - the daemon's scheduled **memory retrospective** reviews each conversation and
+     calls `remember`, made frequent during the build and then restored
+   - consolidation files the facts into concept pages
+   - the result is saved as a `vellum backup` snapshot
+3. **ask:** with memory writing switched off, each question goes to a new conversation.
+   The reply is read from the turn's MLflow trace (`mlflowTracing` in Vellum-RSI), and
+   the injected memory from the instance's memory-v3 pool log.
+4. **score:**
+   - ConvoMem's official judge prompts (`convomem_arena.judges`) through any
+     OpenAI-compatible endpoint (default: local Ollama)
+   - two rough diagnostics for fact categories: is the answer anywhere in memory
+     (capture), and was it in what got injected for this question (retrieval)
+
+```bash
+python -m convomem_arena.vellum_eval.run \
+  --source /path/to/vellum-assistant   # checkout with cli/ and assistant/
+  --instance vellum-rsi-eval --persona Small_Business_Owner \
+  --per-category 2 --history-size 16
+# or in parts: --stages build | --stages ask,score --run-dir outputs/vellum-eval/<run-id>
+```
+
+Requirements and caveats:
+
+- **A dedicated, freshly hatched instance** with `mlflowTracing.enabled`, connections
+  and profiles for every call site, and the Claude Code token stored if call sites use
+  the `claude-code` provider.
+- **Shell environment:** the harness strips `VELLUM_WORKSPACE_DIR` / `*_IPC_SOCKET_DIR`
+  inherited from the shell. A profile that exports another instance's values would
+  otherwise make daemons bind that instance's socket.
+- **One persona per instance for now:** `vellum backup` bundles exclude the Qdrant vector
+  index and a restore keeps the live one, so restoring persona B over persona A leaves A's
+  vectors behind. Restoring a persona's own snapshot is fine.
+- **Speed:** retrospectives take about 3–5 minutes per conversation on a local 30B model,
+  so a 17-conversation history takes about an hour to build.
+
 ---
 
 ## How this fits into verifiers, prime-envs, and the Hub
