@@ -397,6 +397,36 @@ The judge prompts are copied **verbatim** from the reference implementation (`qu
 
 The judge endpoint defaults to verifiers' `JudgeConfig` (Prime Inference, key from `PRIME_API_KEY`). The paper used GPT-4o-mini and Gemini Flash during data validation. Pick a judge and keep it fixed when comparing runs.
 
+### Checking judge robustness
+
+Every score here is only as good as its judge, so `convomem_arena.judge_check` tests a judge model with the same rendered prompts and parser the environment uses. It changes **one input at a time** and checks whether the verdict behaves:
+
+| Variant | Changes | A robust judge |
+|---|---|---|
+| `question_paraphrase` | question reworded, same meaning | keeps its verdict |
+| `evidence_paraphrase` | evidence reworded, same facts | keeps its verdict |
+| `question_negated` | question reversed or negated | flips RIGHT → WRONG (abstention: keeps RIGHT, a refusal still refuses) |
+| `evidence_changed` | evidence now contradicts the answer | flips RIGHT → WRONG |
+| `reference_changed` | gold answer replaced with a different one | flips RIGHT → WRONG |
+| `response_wrong` | response replaced with a plausible wrong one | flips RIGHT → WRONG |
+
+The baseline response is the gold answer itself (for the two rubric categories, a generated reply that satisfies the rubric), so the baseline should be RIGHT. A variant is only run against a judge that can see the input it changes: only the user-facts prompts show evidence, and the abstention prompt shows no gold answer. Each check is repeated, and the majority verdict is used; repeats that disagree are reported as the judge's noise floor.
+
+```bash
+# 1. sample items and generate perturbations with a generator model (cached; review review.md)
+python -m convomem_arena.judge_check perturb --per-category 4 --generator-think \
+  --out outputs/judge-check/run1
+
+# 2. grade baseline and variants with each judge, 3 repeats each (resumable)
+python -m convomem_arena.judge_check judge --run-dir outputs/judge-check/run1 \
+  --judge-model qwen3:30b-a3b --judge-model gpt-oss:20b --repeats 3
+
+# 3. score and write report.md
+python -m convomem_arena.judge_check report --run-dir outputs/judge-check/run1
+```
+
+Endpoints default to local Ollama; any OpenAI-compatible endpoint works with `--judge-base-url` and `--judge-api-key-var`. Perturbations are machine-generated and checked only mechanically (present, actually different, numbers kept in paraphrases), so read `review.md` before trusting a report: a bad paraphrase makes a robust judge look fragile.
+
 ### Metrics (recorded in `tools` mode only)
 
 | Name | Meaning |
@@ -554,10 +584,13 @@ convomem-arena/
 │   ├── data.py                 # HubSource (lazy HF download), EvidenceStream (seeded round-robin), mix(), formatting
 │   ├── models.py               # ConvoMemData (TaskData) and MemoryState (State), shared by taskset and tool server
 │   ├── judges.py               # official ConvoMem judge prompts, RIGHT/WRONG parser, category → judge mapping
+│   ├── judge_client.py         # call those judges outside a rollout (any OpenAI-compatible endpoint)
+│   ├── judge_check/            # judge robustness checker: variants, perturbation generator, runner, report
 │   └── servers/
 │       └── memory.py           # MemoryToolset (MCP): BM25 index, search/read/list tools; runnable as a module
 └── tests/
-    └── test_convomem.py        # offline tests (no network, no model)
+    ├── test_convomem.py        # offline tests (no network, no model)
+    └── test_judge_check.py     # judge checker tests with a fake generator and fake judges
 ```
 
 ### Data flow
@@ -700,10 +733,12 @@ If you use this environment, please cite ConvoMem:
 > ConvoMem, Salesforce AI Research, arXiv:2511.10523 (2025). Use the BibTeX from <https://arxiv.org/abs/2511.10523>.
 
 - **Dataset:** Salesforce/ConvoMem, **CC-BY-NC-4.0** (non-commercial use only).
-- **Judge prompts:** adapted verbatim from SalesforceAIResearch/ConvoMem; see that repository's license.
+- **Judge prompts and mixing algorithm:** ported verbatim from [SalesforceAIResearch/ConvoMem](https://github.com/SalesforceAIResearch/ConvoMem), **Apache License 2.0**.
 
 ---
 
 ## Changelog
+
+- 2026-11-16: Judge robustness checker (`python -m convomem_arena.judge_check`): one-input-at-a-time paraphrase and meaning-change variants, repeated verdicts, per-judge report. The standalone judge client moved to `convomem_arena.judge_client`.
 
 - 2026-11-09: Initial release. verifiers v1 taskset with `context` / `tools` / `files` memory modes, official ConvoMem mixing and judges, and retrieval metrics.
