@@ -266,6 +266,27 @@ Each evidence item looks like this, abridged from a real record:
 }
 ```
 
+### Checking data quality
+
+`python -m convomem_arena.data_check --out outputs/data-check/run1` audits a sample of items with deterministic checks (no model calls). It samples a few items from each of several persona files in every category and evidence-count folder, so the sample is spread across personas.
+
+| Check | Severity | Flags an item when |
+|---|---|---|
+| `empty_field` | error | the question or answer is empty |
+| `evidence_count_mismatch` | error | the number of evidence messages differs from the folder's count |
+| `flagged_conversation_count` | error | conversations marked `containsEvidence` differ from that count |
+| `evidence_not_in_conversations` | error | an evidence message does not appear in any of its conversations |
+| `evidence_speaker_mismatch` | error | an evidence message's speaker differs from the conversation's |
+| `wrong_evidence_speaker` | review | user facts are said by the assistant, or assistant facts by the user |
+| `answer_restates_question` | review | the answer adds no content words beyond the question |
+| `answer_not_in_evidence` | review | under half of the answer's key words appear in the evidence |
+| `latest_evidence_not_answer` | review | changing facts: an earlier evidence message matches the answer better than the last |
+| `answer_terms_in_filler` | review | a filler conversation of the same persona holds most of the answer's key words |
+| `question_topic_in_filler` | review | abstention: a filler conversation holds most of the question's key words |
+| `duplicate_question` | review | the same question appears in more than one sampled item |
+
+**error** flags are facts about the file. **review** flags are heuristic pointers, written with the item's text to `review.md` for a human to confirm or dismiss. Filler checks download each persona's filler file (about 5.6 MB); `--filler-personas` caps how many (default 25). Raise `--files-per-folder` and `--items-per-file` to audit more, up to the whole dataset.
+
 ### Categories
 
 | Category (`--env.taskset.categories`) | Folder | What it tests | Evidence counts | Example |
@@ -586,11 +607,14 @@ convomem-arena/
 │   ├── judges.py               # official ConvoMem judge prompts, RIGHT/WRONG parser, category → judge mapping
 │   ├── judge_client.py         # call those judges outside a rollout (any OpenAI-compatible endpoint)
 │   ├── judge_check/            # judge robustness checker: variants, perturbation generator, runner, report
+│   ├── data_check/             # data quality checker: deterministic checks on sampled raw items
+│   ├── text.py                 # shared word / key-term helpers for the checkers
 │   └── servers/
 │       └── memory.py           # MemoryToolset (MCP): BM25 index, search/read/list tools; runnable as a module
 └── tests/
     ├── test_convomem.py        # offline tests (no network, no model)
-    └── test_judge_check.py     # judge checker tests with a fake generator and fake judges
+    ├── test_judge_check.py     # judge checker tests with a fake generator and fake judges
+    └── test_data_check.py      # data checker tests on hand-built items
 ```
 
 ### Data flow
@@ -739,6 +763,7 @@ If you use this environment, please cite ConvoMem:
 
 ## Changelog
 
+- 2026-11-17: Data quality checker (`python -m convomem_arena.data_check`): structural checks, answer grounding, changing-fact order, filler contamination and duplicates on a persona-spread sample.
 - 2026-11-16: Judge robustness checker (`python -m convomem_arena.judge_check`): one-input-at-a-time paraphrase and meaning-change variants, repeated verdicts, per-judge report. The standalone judge client moved to `convomem_arena.judge_client`.
 
 - 2026-11-09: Initial release. verifiers v1 taskset with `context` / `tools` / `files` memory modes, official ConvoMem mixing and judges, and retrieval metrics.
