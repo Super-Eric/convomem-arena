@@ -275,15 +275,19 @@ Each evidence item looks like this, abridged from a real record:
 | `empty_field` | error | the question or answer is empty |
 | `evidence_count_mismatch` | error | the number of evidence messages differs from the folder's count |
 | `flagged_conversation_count` | error | conversations marked `containsEvidence` differ from that count |
-| `evidence_not_in_conversations` | error | an evidence message does not appear in any of its conversations |
+| `evidence_not_in_conversations` | error | an evidence message has no close match (similarity < 0.85) in any of its conversations |
 | `evidence_speaker_mismatch` | error | an evidence message's speaker differs from the conversation's |
+| `evidence_reworded_in_conversation` | review | an evidence message appears only reworded (usually a changed lead-in; the fact is intact) |
 | `wrong_evidence_speaker` | review | user facts are said by the assistant, or assistant facts by the user |
 | `answer_restates_question` | review | the answer adds no content words beyond the question |
-| `answer_not_in_evidence` | review | under half of the answer's key words appear in the evidence |
+| `answer_name_not_in_evidence` | review | a name in the answer is in neither the evidence nor the question |
+| `answer_number_not_in_evidence` | review | a number in the answer is not in the evidence (usually a computed total or average) |
 | `latest_evidence_not_answer` | review | changing facts: an earlier evidence message matches the answer better than the last |
-| `answer_terms_in_filler` | review | a filler conversation of the same persona holds most of the answer's key words |
-| `question_topic_in_filler` | review | abstention: a filler conversation holds most of the question's key words |
+| `answer_terms_in_filler` | review | one filler message of the same persona holds the answer's details, including a name |
+| `question_topic_in_filler` | review | abstention: one filler message holds most of the question's key words |
 | `duplicate_question` | review | the same question appears in more than one sampled item |
+
+An answer's "details" are its names (capitalised words that don't start a sentence) and numbers, list markers excluded: ConvoMem's gold answers are often written-out advice, so their other words rarely appear in the evidence, but their names and numbers should. Filler matches must co-occur in a single message and include a name, since numbers and scattered words recur by coincidence.
 
 **error** flags are facts about the file. **review** flags are heuristic pointers, written with the item's text to `review.md` for a human to confirm or dismiss. Filler checks download each persona's filler file (about 5.6 MB); `--filler-personas` caps how many (default 25). Raise `--files-per-folder` and `--items-per-file` to audit more, up to the whole dataset.
 
