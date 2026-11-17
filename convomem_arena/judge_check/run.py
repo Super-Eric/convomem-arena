@@ -225,7 +225,10 @@ def report(results: list[dict], cases: list[Case]) -> str:
             vr = [r for r in rs if r["variant"] == variant]
             if not vr:
                 continue
-            expect = vr[0]["expect"]
+            expects = sorted({r["expect"] for r in vr}, key=["right", "same", "flip"].index)
+            expect = " / ".join(expects)
+            if variant == "question_negated" and len(expects) > 1:
+                expect = "flip (abstention: same)"
             cells = [_rate([r for r in vr if r["kind"] == k]) for k in JUDGE_KINDS]
             inconclusive = sum(r["outcome"] == "inconclusive" for r in vr)
             out.append(

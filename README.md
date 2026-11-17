@@ -289,6 +289,8 @@ Each evidence item looks like this, abridged from a real record:
 
 An answer's "details" are its names (capitalised words that don't start a sentence) and numbers, list markers excluded: ConvoMem's gold answers are often written-out advice, so their other words rarely appear in the evidence, but their names and numbers should. Filler matches must co-occur in a single message and include a name, since numbers and scattered words recur by coincidence.
 
+**First results (2026-11-17, 368 items from 62 personas, filler checked for 25):** 290 items had no flags. Structural errors were rare (3 items: one implicit-connections item with two evidence messages in a one-evidence folder, one abstention item whose evidence matches its conversation at only 0.82). 11 items carried evidence only in reworded form, fact intact. Reading every review flag by hand: missing numbers were almost all computed totals and averages (user facts that test arithmetic over memory); one gold answer relied on world knowledge (a recommended city and museum) rather than the user's history; and filler held true conflicts in a few changing-facts items (the gold answer names Jessica as the new Head of Sales Ops while the same persona's filler names Helen Vance), which a random mix can place after the evidence. Other filler hits were harmless repeats of the same fact, or coincidences.
+
 **error** flags are facts about the file. **review** flags are heuristic pointers, written with the item's text to `review.md` for a human to confirm or dismiss. Filler checks download each persona's filler file (about 5.6 MB); `--filler-personas` caps how many (default 25). Raise `--files-per-folder` and `--items-per-file` to audit more, up to the whole dataset.
 
 ### Categories
@@ -449,6 +451,15 @@ python -m convomem_arena.judge_check judge --run-dir outputs/judge-check/run1 \
 # 3. score and write report.md
 python -m convomem_arena.judge_check report --run-dir outputs/judge-check/run1
 ```
+
+**First results (2026-11-17, 24 items, 4 per category, 3 repeats, temperature 0):**
+
+| Judge | Correct response judged RIGHT | Paraphrase invariance | Wrong response / changed reference → WRONG | Negated question → WRONG | Contradicted evidence → WRONG | Unstable groups |
+|---|---|---|---|---|---|---|
+| `qwen3:30b-a3b` | 23/24 | 30/30 | 42/42 | 0/19 | 0/4 | 4/122 |
+| `gpt-oss:20b` | 22/24 | 29/30 | 40/40 | 0/18 | 0/4 | 0/122 |
+
+Both judges catch a wrong response or a changed reference every time and ignore rewording, but neither notices when the question no longer asks what the response answers, or when the evidence contradicts it: they grade **response against reference**, not response against question or evidence. So a ConvoMem score from these judges says "the reply states the gold fact", nothing more. The misses on correct responses are all rubric categories, where the prompt demands every criterion. qwen's 4 unstable groups (3 on negated questions) show it is noisiest exactly where it is uncertain. Small samples (only 4 items exercise evidence) make these indications, not measurements.
 
 Endpoints default to local Ollama; any OpenAI-compatible endpoint works with `--judge-base-url` and `--judge-api-key-var`. Perturbations are machine-generated and checked only mechanically (present, actually different, numbers kept in paraphrases), so read `review.md` before trusting a report: a bad paraphrase makes a robust judge look fragile.
 
