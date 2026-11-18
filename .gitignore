@@ -8,3 +8,4 @@ scrollcraft/builds/*/node_modules/
 scrollcraft/builds/*/lab/
 scrollcraft/builds/*/package*.json
 scrollcraft/lab/
+site/
