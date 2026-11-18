@@ -21,6 +21,7 @@ Answers are graded by **ConvoMem's official RIGHT/WRONG LLM judges**, using the 
 Requirements: Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
+git clone https://github.com/rahmansunny071/convomem-arena.git && cd convomem-arena
 uv venv --python 3.12
 uv pip install -e ".[dev]"
 
@@ -50,6 +51,8 @@ Use a dedicated, freshly hatched instance: the build restores snapshots over its
 
 ## Documentation
 
+The full documentation is at **<https://rahmansunny071.github.io/convomem-arena/>**. The same pages live in [`docs/`](docs/):
+
 | | |
 |---|---|
 | **Get started** | [Evaluate a model](docs/getting-started/quickstart.md) · [Evaluate a personal assistant](docs/getting-started/personal-assistant.md) |
@@ -58,7 +61,7 @@ Use a dedicated, freshly hatched instance: the build restores snapshots over its
 | **Guides** | [Running evaluations](docs/guides/running-evaluations.md) · [Reading results](docs/guides/reading-results.md) · [Use a Vellum assistant as the model](docs/guides/vellum-as-model.md) · [Publishing to the Hub](docs/guides/publishing.md) |
 | **Reference** | [Configuration](docs/reference/configuration.md) · [Architecture](docs/reference/architecture.md) · [Development](docs/reference/development.md) · [Design decisions](docs/reference/design-decisions.md) · [Limitations](docs/reference/limitations.md) · [Troubleshooting](docs/reference/troubleshooting.md) · [Changelog](docs/reference/changelog.md) |
 
-To browse these as a website locally: `uv pip install -e ".[docs]" && uv run mkdocs serve`.
+To preview the site locally: `uv pip install -e ".[docs]" && uv run mkdocs serve`.
 
 ## Citation and license
 

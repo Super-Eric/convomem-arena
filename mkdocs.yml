@@ -1,5 +1,6 @@
 site_name: convomem-arena
 site_description: A conversational-memory environment for models and personal assistants, built on verifiers v1.
+site_url: https://rahmansunny071.github.io/convomem-arena/
 repo_url: https://github.com/rahmansunny071/convomem-arena
 repo_name: convomem-arena
 docs_dir: docs
