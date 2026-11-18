@@ -114,13 +114,17 @@ class VellumInstance:
 
     # ------------------------------------------------- snapshots (Stage A cache)
 
+    # The CLIs run from the instance workspace (see `_run`), so paths handed to
+    # them must be absolute.
+
     def backup(self, path: Path) -> Path:
+        path = path.expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
         self.vellum("backup", self.name, "--output", str(path), timeout=900)
         return path
 
     def restore(self, path: Path) -> None:
-        self.vellum("restore", self.name, "--from", str(path), timeout=900)
+        self.vellum("restore", self.name, "--from", str(path.expanduser().resolve()), timeout=900)
         self.wait_healthy()
 
     def wait_healthy(self, timeout_s: float = 300) -> None:

@@ -266,6 +266,33 @@ Each evidence item looks like this, abridged from a real record:
 }
 ```
 
+### Checking data quality
+
+`python -m convomem_arena.data_check --out outputs/data-check/run1` audits a sample of items with deterministic checks (no model calls). It samples a few items from each of several persona files in every category and evidence-count folder, so the sample is spread across personas.
+
+| Check | Severity | Flags an item when |
+|---|---|---|
+| `empty_field` | error | the question or answer is empty |
+| `evidence_count_mismatch` | error | the number of evidence messages differs from the folder's count |
+| `flagged_conversation_count` | error | conversations marked `containsEvidence` differ from that count |
+| `evidence_not_in_conversations` | error | an evidence message has no close match (similarity < 0.85) in any of its conversations |
+| `evidence_speaker_mismatch` | error | an evidence message's speaker differs from the conversation's |
+| `evidence_reworded_in_conversation` | review | an evidence message appears only reworded (usually a changed lead-in; the fact is intact) |
+| `wrong_evidence_speaker` | review | user facts are said by the assistant, or assistant facts by the user |
+| `answer_restates_question` | review | the answer adds no content words beyond the question |
+| `answer_name_not_in_evidence` | review | a name in the answer is in neither the evidence nor the question |
+| `answer_number_not_in_evidence` | review | a number in the answer is not in the evidence (usually a computed total or average) |
+| `latest_evidence_not_answer` | review | changing facts: an earlier evidence message matches the answer better than the last |
+| `answer_terms_in_filler` | review | one filler message of the same persona holds the answer's details, including a name |
+| `question_topic_in_filler` | review | abstention: one filler message holds most of the question's key words |
+| `duplicate_question` | review | the same question appears in more than one sampled item |
+
+An answer's "details" are its names (capitalised words that don't start a sentence) and numbers, list markers excluded: ConvoMem's gold answers are often written-out advice, so their other words rarely appear in the evidence, but their names and numbers should. Filler matches must co-occur in a single message and include a name, since numbers and scattered words recur by coincidence.
+
+**First results (2026-11-17, 368 items from 62 personas, filler checked for 25):** 290 items had no flags. Structural errors were rare (3 items: one implicit-connections item with two evidence messages in a one-evidence folder, one abstention item whose evidence matches its conversation at only 0.82). 11 items carried evidence only in reworded form, fact intact. Reading every review flag by hand: missing numbers were almost all computed totals and averages (user facts that test arithmetic over memory); one gold answer relied on world knowledge (a recommended city and museum) rather than the user's history; and filler held true conflicts in a few changing-facts items (the gold answer names Jessica as the new Head of Sales Ops while the same persona's filler names Helen Vance), which a random mix can place after the evidence. Other filler hits were harmless repeats of the same fact, or coincidences.
+
+**error** flags are facts about the file. **review** flags are heuristic pointers, written with the item's text to `review.md` for a human to confirm or dismiss. Filler checks download each persona's filler file (about 5.6 MB); `--filler-personas` caps how many (default 25). Raise `--files-per-folder` and `--items-per-file` to audit more, up to the whole dataset.
+
 ### Categories
 
 | Category (`--env.taskset.categories`) | Folder | What it tests | Evidence counts | Example |
@@ -396,6 +423,45 @@ The judge prompts are copied **verbatim** from the reference implementation (`qu
 **Verdict parsing** follows the reference: a reply containing only RIGHT → pass; WRONG, or both RIGHT and WRONG → fail; neither → **raise**. Raising rather than returning 0.0 means a broken judge shows up as an error instead of being recorded as a model mistake.
 
 The judge endpoint defaults to verifiers' `JudgeConfig` (Prime Inference, key from `PRIME_API_KEY`). The paper used GPT-4o-mini and Gemini Flash during data validation. Pick a judge and keep it fixed when comparing runs.
+
+### Checking judge robustness
+
+Every score here is only as good as its judge, so `convomem_arena.judge_check` tests a judge model with the same rendered prompts and parser the environment uses. It changes **one input at a time** and checks whether the verdict behaves:
+
+| Variant | Changes | A robust judge |
+|---|---|---|
+| `question_paraphrase` | question reworded, same meaning | keeps its verdict |
+| `evidence_paraphrase` | evidence reworded, same facts | keeps its verdict |
+| `question_negated` | question reversed or negated | flips RIGHT → WRONG (abstention: keeps RIGHT, a refusal still refuses) |
+| `evidence_changed` | evidence now contradicts the answer | flips RIGHT → WRONG |
+| `reference_changed` | gold answer replaced with a different one | flips RIGHT → WRONG |
+| `response_wrong` | response replaced with a plausible wrong one | flips RIGHT → WRONG |
+
+The baseline response is the gold answer itself (for the two rubric categories, a generated reply that satisfies the rubric), so the baseline should be RIGHT. A variant is only run against a judge that can see the input it changes: only the user-facts prompts show evidence, and the abstention prompt shows no gold answer. Each check is repeated, and the majority verdict is used; repeats that disagree are reported as the judge's noise floor.
+
+```bash
+# 1. sample items and generate perturbations with a generator model (cached; review review.md)
+python -m convomem_arena.judge_check perturb --per-category 4 --generator-think \
+  --out outputs/judge-check/run1
+
+# 2. grade baseline and variants with each judge, 3 repeats each (resumable)
+python -m convomem_arena.judge_check judge --run-dir outputs/judge-check/run1 \
+  --judge-model qwen3:30b-a3b --judge-model gpt-oss:20b --repeats 3
+
+# 3. score and write report.md
+python -m convomem_arena.judge_check report --run-dir outputs/judge-check/run1
+```
+
+**First results (2026-11-17, 24 items, 4 per category, 3 repeats, temperature 0):**
+
+| Judge | Correct response judged RIGHT | Paraphrase invariance | Wrong response / changed reference → WRONG | Negated question → WRONG | Contradicted evidence → WRONG | Unstable groups |
+|---|---|---|---|---|---|---|
+| `qwen3:30b-a3b` | 23/24 | 30/30 | 42/42 | 0/19 | 0/4 | 4/122 |
+| `gpt-oss:20b` | 22/24 | 29/30 | 40/40 | 0/18 | 0/4 | 0/122 |
+
+Both judges catch a wrong response or a changed reference every time and ignore rewording, but neither notices when the question no longer asks what the response answers, or when the evidence contradicts it: they grade **response against reference**, not response against question or evidence. So a ConvoMem score from these judges says "the reply states the gold fact", nothing more. The misses on correct responses are all rubric categories, where the prompt demands every criterion. qwen's 4 unstable groups (3 on negated questions) show it is noisiest exactly where it is uncertain. Small samples (only 4 items exercise evidence) make these indications, not measurements.
+
+Endpoints default to local Ollama; any OpenAI-compatible endpoint works with `--judge-base-url` and `--judge-api-key-var`. Perturbations are machine-generated and checked only mechanically (present, actually different, numbers kept in paraphrases), so read `review.md` before trusting a report: a bad paraphrase makes a robust judge look fragile.
 
 ### Metrics (recorded in `tools` mode only)
 
@@ -554,10 +620,16 @@ convomem-arena/
 │   ├── data.py                 # HubSource (lazy HF download), EvidenceStream (seeded round-robin), mix(), formatting
 │   ├── models.py               # ConvoMemData (TaskData) and MemoryState (State), shared by taskset and tool server
 │   ├── judges.py               # official ConvoMem judge prompts, RIGHT/WRONG parser, category → judge mapping
+│   ├── judge_client.py         # call those judges outside a rollout (any OpenAI-compatible endpoint)
+│   ├── judge_check/            # judge robustness checker: variants, perturbation generator, runner, report
+│   ├── data_check/             # data quality checker: deterministic checks on sampled raw items
+│   ├── text.py                 # shared word / key-term helpers for the checkers
 │   └── servers/
 │       └── memory.py           # MemoryToolset (MCP): BM25 index, search/read/list tools; runnable as a module
 └── tests/
-    └── test_convomem.py        # offline tests (no network, no model)
+    ├── test_convomem.py        # offline tests (no network, no model)
+    ├── test_judge_check.py     # judge checker tests with a fake generator and fake judges
+    └── test_data_check.py      # data checker tests on hand-built items
 ```
 
 ### Data flow
@@ -700,10 +772,13 @@ If you use this environment, please cite ConvoMem:
 > ConvoMem, Salesforce AI Research, arXiv:2511.10523 (2025). Use the BibTeX from <https://arxiv.org/abs/2511.10523>.
 
 - **Dataset:** Salesforce/ConvoMem, **CC-BY-NC-4.0** (non-commercial use only).
-- **Judge prompts:** adapted verbatim from SalesforceAIResearch/ConvoMem; see that repository's license.
+- **Judge prompts and mixing algorithm:** ported verbatim from [SalesforceAIResearch/ConvoMem](https://github.com/SalesforceAIResearch/ConvoMem), **Apache License 2.0**.
 
 ---
 
 ## Changelog
+
+- 2026-11-17: Data quality checker (`python -m convomem_arena.data_check`): structural checks, answer grounding, changing-fact order, filler contamination and duplicates on a persona-spread sample.
+- 2026-11-16: Judge robustness checker (`python -m convomem_arena.judge_check`): one-input-at-a-time paraphrase and meaning-change variants, repeated verdicts, per-judge report. The standalone judge client moved to `convomem_arena.judge_client`.
 
 - 2026-11-09: Initial release. verifiers v1 taskset with `context` / `tools` / `files` memory modes, official ConvoMem mixing and judges, and retrieval metrics.
