@@ -116,3 +116,124 @@ def test_metric_records_exact_match_for_fact_categories_only():
         "exact_match": 1.0
     }
     assert asyncio.run(_task("abstention", "judge").deterministic(reply)) == {}
+
+
+# --- issue #11: denied, hedged or retracted answers ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Either October fifth or April 10th.",  # the old value spelled out, past the number guard
+        "It is not April 10th.",
+        "April 10th? No, I don't think so. I don't remember.",
+        f"I don't remember. It is not this: {GOLD}",
+        f"{GOLD} No, that is wrong, and I don't remember the right answer.",
+        f"{GOLD} That is not it.",
+        "April 10th? No.",
+        "April 10th. That's not right.",
+        "April 10th. Or October.",
+        "Maybe April 10th.",
+        f"Not {GOLD}",
+    ],
+)
+def test_denials_and_hedges_score_zero(reply):
+    assert exact_match(reply, GOLD, Q, "changing_facts", EVIDENCE) == 0.0
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "April 10th next year. Don't forget to update your calendar!",
+        "Certainly! Based on what you told me, it's now April 10th next year.",
+        "The National concert is scheduled for **April 10th (next year)**.",
+    ],
+)
+def test_plain_answers_with_friendly_extras_still_score(reply):
+    assert exact_match(reply, GOLD, Q, "changing_facts", EVIDENCE) == 1.0
+
+
+def test_negation_the_gold_answer_has_itself_is_allowed():
+    q = "Am I still allergic to peanuts?"
+    gold = "No, you are not allergic to Brazil nuts anymore, only to peanuts."
+    assert exact_match("You're not allergic to Brazil nuts anymore.", gold, q, "user_facts") == 1.0
+
+
+# --- issue #11: candidate lists -------------------------------------------------------------
+
+LQ = "What was that candidate's name?"
+LGOLD = "The software engineer candidate's name was Liam Petrov."
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Liam Petrov Sarah Acme Boston 12 2019 Jordan Maya Google",
+        "Sarah\nJordan\nLiam Petrov\nMaya\nAcme",  # one per line: line starts still count
+        "Sarah; Jordan; Liam Petrov; Maya",
+        "sarah jordan liam petrov maya acme boston",  # lower case: no names to count
+        "Liam Petrov, Acme, Boston",
+    ],
+)
+def test_candidate_lists_score_zero(reply):
+    assert exact_match(reply, LGOLD, LQ, "user_facts") == 0.0
+
+
+@pytest.mark.parametrize(
+    "reply",
+    ["Liam Petrov.", "His name was Liam Petrov.", "Liam Petrov, from Acme Corp in Boston."],
+)
+def test_answers_naming_a_few_more_things_still_score(reply):
+    assert exact_match(reply, LGOLD, LQ, "user_facts") == 1.0
+
+
+def test_i_dont_know_is_not_a_name_match():
+    q = "Which carrier did I switch to?"
+    gold = "You said I've switched to T-Mobile."
+    assert exact_match("I don't know.", gold, q, "user_facts") == 0.0
+    assert exact_match("T-Mobile.", gold, q, "user_facts") == 1.0
+
+
+# --- issue #11: the answer and the reply read the same way ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("question", "gold", "reply", "score"),
+    [
+        ("Which flight?", "United Airlines, XY123456.", "United Airlines, XY123456.", 1.0),
+        ("Which flight?", "United Airlines, XY123456.", "United Airlines, XY 123456.", 1.0),
+        ("Whose talk?", "You suggested a talk by Brené Brown.", "Brené Brown.", 1.0),
+        ("Whose talk?", "You suggested a talk by Brené Brown.", "Brene Brown.", 1.0),
+        ("Whose talk?", "You suggested a talk by Brené Brown.", "Bren Brown.", 0.0),
+        ("My Wi-Fi password?", "It is 'Pixel&Tomatoes22!'.", "It is 'Pixel&Tomatoes22!'.", 1.0),
+        ("My Wi-Fi password?", "It is 'Pixel&Tomatoes22!'.", "It is 'Banana Tomatoes 22'.", 0.0),
+        ("When is my alarm?", "Your alarm is set for 7 AM.", "7 a.m.", 1.0),
+        ("When is my alarm?", "Your alarm is set for 7 AM.", "7 PM.", 0.0),
+        ("Which headphones?", "You bought the Sony WH-1000XM4.", "Sony WH-1000XM4", 1.0),
+        ("Which channel?", "I recommended 3Blue1Brown.", "3Blue1Brown", 1.0),
+        ("What's my budget?", "Your budget is $2,100 for the trip.", "$2,100", 1.0),
+        ("What's my budget?", "Your budget is $2,100 for the trip.", "$2,000", 0.0),
+    ],
+)
+def test_answer_and_reply_are_read_the_same_way(question, gold, reply, score):
+    assert exact_match(gold, gold, question, "user_facts") == 1.0
+    assert exact_match(reply, gold, question, "user_facts") == score
+
+
+def test_numbers_match_only_numbers():
+    from convomem_arena.text import present
+
+    assert present(["2"], "$2,100") == []
+    assert present(["2100"], "$2,100") == ["2100"]
+
+
+def test_hyphenated_and_possessive_names_the_question_holds_are_not_required_again():
+    from convomem_arena.text import specifics
+
+    assert specifics("Maya's Wi-Fi is fast.", "What did Maya's Wi-Fi do?") == []
+    assert specifics("You loved 'Atomic Habits' by James Clear.") == [
+        "atomic",
+        "habits",
+        "james",
+        "clear",
+    ]
