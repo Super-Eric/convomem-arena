@@ -5,8 +5,11 @@ the Hugging Face Hub.
 """
 
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
+import convomem_arena.vellum_eval.instance as instance_module
 from convomem_arena.data import EVIDENCE_ROOT, FILLER_ROOT
 from convomem_arena.vellum_eval.instance import VellumInstance, reply_text
 from convomem_arena.vellum_eval.judge import judge_prompt
@@ -154,12 +157,24 @@ def test_answer_matching_helpers():
     assert contains_answer("we love siam spice on tuesdays", gold, question=q)
 
 
+def _on(monkeypatch, sysname: str) -> None:
+    """Pretend to run on `sysname`: the CLI's socket rule depends on the platform."""
+    real = os.uname()
+    fake = SimpleNamespace(**{f: getattr(real, f) for f in ("nodename", "release", "machine")})
+    fake.sysname = sysname
+    monkeypatch.setattr(instance_module.os, "uname", lambda: fake)
+
+
 def test_socket_dir_follows_the_cli_rule(monkeypatch):
     inst = VellumInstance("a", Path("/src"))
+    long_ws = Path("/w/" + "x" * 120)
+    _on(monkeypatch, "Darwin")
     monkeypatch.setattr(VellumInstance, "workspace", property(lambda self: Path("/w/ws")))
     assert inst.ipc_socket_dir == Path("/w/ws")  # short enough: the socket stays in the workspace
-    monkeypatch.setattr(VellumInstance, "workspace", property(lambda self: Path("/w/" + "x" * 120)))
-    assert inst.ipc_socket_dir.name.startswith("vellum-ipc-")  # too long: hashed tmp dir
+    monkeypatch.setattr(VellumInstance, "workspace", property(lambda self: long_ws))
+    assert inst.ipc_socket_dir.name.startswith("vellum-ipc-")  # too long on macOS: hashed tmp dir
+    _on(monkeypatch, "Linux")
+    assert inst.ipc_socket_dir == long_ws  # the hashed dir is a macOS-only rule
 
 
 def test_env_drops_inherited_instance_vars(monkeypatch):
