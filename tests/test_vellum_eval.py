@@ -5,8 +5,11 @@ the Hugging Face Hub.
 """
 
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
+import convomem_arena.vellum_eval.instance as instance_module
 from convomem_arena.data import EVIDENCE_ROOT, FILLER_ROOT
 from convomem_arena.vellum_eval.instance import VellumInstance, reply_text
 from convomem_arena.vellum_eval.judge import judge_prompt
@@ -17,7 +20,9 @@ PERSONA = "00000000-0000-0000-0000-000000000000_Test_Owner.json"
 
 
 def conv(cid, *texts):
-    msgs = [{"speaker": "User" if i % 2 == 0 else "Assistant", "text": t} for i, t in enumerate(texts)]
+    msgs = [
+        {"speaker": "User" if i % 2 == 0 else "Assistant", "text": t} for i, t in enumerate(texts)
+    ]
     return {"id": cid, "messages": msgs}
 
 
@@ -26,23 +31,40 @@ class FakeSource:
         self.files = {
             f"{EVIDENCE_ROOT}/user_evidence/1_evidence/{PERSONA}": {
                 "evidence_items": [
-                    {"question": "What is my shop called?", "answer": "Aether Pets",
-                     "message_evidences": [{"text": "My shop is Aether Pets."}],
-                     "conversations": [conv("u1", "My shop is Aether Pets.", "Nice!")]},
-                    {"question": "Where do I live?", "answer": "Denver",
-                     "message_evidences": [{"text": "I live in Denver."}],
-                     "conversations": [conv("u2", "I live in Denver.", "Got it.")]},
+                    {
+                        "question": "What is my shop called?",
+                        "answer": "Aether Pets",
+                        "message_evidences": [{"text": "My shop is Aether Pets."}],
+                        "conversations": [conv("u1", "My shop is Aether Pets.", "Nice!")],
+                    },
+                    {
+                        "question": "Where do I live?",
+                        "answer": "Denver",
+                        "message_evidences": [{"text": "I live in Denver."}],
+                        "conversations": [conv("u2", "I live in Denver.", "Got it.")],
+                    },
                 ]
             },
             f"{EVIDENCE_ROOT}/changing_evidence/2_evidence/{PERSONA}": {
                 "evidence_items": [
-                    {"question": "When does the walker come?", "answer": "9:30 AM",
-                     "message_evidences": [{"text": "Walker at 8 AM."}, {"text": "Walker now 9:30 AM."}],
-                     "conversations": [conv("c1", "Walker at 8 AM.", "ok"), conv("c2", "Walker now 9:30 AM.", "ok")]},
+                    {
+                        "question": "When does the walker come?",
+                        "answer": "9:30 AM",
+                        "message_evidences": [
+                            {"text": "Walker at 8 AM."},
+                            {"text": "Walker now 9:30 AM."},
+                        ],
+                        "conversations": [
+                            conv("c1", "Walker at 8 AM.", "ok"),
+                            conv("c2", "Walker now 9:30 AM.", "ok"),
+                        ],
+                    },
                 ]
             },
             f"{FILLER_ROOT}/{PERSONA}": {
-                "evidence_items": [{"conversations": [conv(f"f{i}", f"filler {i}", "ok") for i in range(10)]}]
+                "evidence_items": [
+                    {"conversations": [conv(f"f{i}", f"filler {i}", "ok") for i in range(10)]}
+                ]
             },
         }
 
@@ -54,9 +76,15 @@ class FakeSource:
 
 
 def test_plan_merges_one_history_and_keeps_changing_order():
-    plan = build_plan(PERSONA, per_category=2, history_size=8, seed=3,
-                      categories=["user_facts", "changing_facts"], now_ms=100 * DAY_MS,
-                      source=FakeSource())
+    plan = build_plan(
+        PERSONA,
+        per_category=2,
+        history_size=8,
+        seed=3,
+        categories=["user_facts", "changing_facts"],
+        now_ms=100 * DAY_MS,
+        source=FakeSource(),
+    )
     assert {q.category for q in plan.questions} == {"user_facts", "changing_facts"}
     assert len(plan.questions) == 3
     ids = [h.id for h in plan.history]
@@ -76,8 +104,14 @@ def test_plan_is_deterministic_per_seed():
 
 
 def test_import_payload_shape():
-    plan = build_plan(PERSONA, history_size=5, seed=0, now_ms=10 * DAY_MS,
-                      categories=["user_facts"], source=FakeSource())
+    plan = build_plan(
+        PERSONA,
+        history_size=5,
+        seed=0,
+        now_ms=10 * DAY_MS,
+        categories=["user_facts"],
+        source=FakeSource(),
+    )
     payload = import_payload(plan)
     first = payload["conversations"][0]
     assert first["sourceKey"] == f"convomem:{plan.history[0].id}"
@@ -86,17 +120,33 @@ def test_import_payload_shape():
 
 
 def test_judge_prompts_are_the_official_ones_filled_in():
-    p = judge_prompt(category="changing_facts", evidence_count=2, question="Q?",
-                     answer="9:30 AM", response="R", evidence_messages=["a", "b"])
+    p = judge_prompt(
+        category="changing_facts",
+        evidence_count=2,
+        question="Q?",
+        answer="9:30 AM",
+        response="R",
+        evidence_messages=["a", "b"],
+    )
     assert "9:30 AM" in p and "{answer}" not in p and "RIGHT" in p
-    rubric = judge_prompt(category="preferences", evidence_count=1, question="Q?",
-                          answer="must recommend Rover", response="R", evidence_messages=["x"])
+    rubric = judge_prompt(
+        category="preferences",
+        evidence_count=1,
+        question="Q?",
+        answer="must recommend Rover",
+        response="R",
+        evidence_messages=["x"],
+    )
     assert "must recommend Rover" in rubric
 
 
 def test_answer_matching_helpers():
     assert key_terms("The vendor is Staples Business Advantage.") == [
-        "vendor", "staples", "business", "advantage"]
+        "vendor",
+        "staples",
+        "business",
+        "advantage",
+    ]
     assert contains_answer("we use staples business advantage", "Staples Business Advantage")
     assert not contains_answer("we use fedex", "Staples Business Advantage")
     assert contains_answer("save $500 each month", "$500")
@@ -107,12 +157,24 @@ def test_answer_matching_helpers():
     assert contains_answer("we love siam spice on tuesdays", gold, question=q)
 
 
+def _on(monkeypatch, sysname: str) -> None:
+    """Pretend to run on `sysname`: the CLI's socket rule depends on the platform."""
+    real = os.uname()
+    fake = SimpleNamespace(**{f: getattr(real, f) for f in ("nodename", "release", "machine")})
+    fake.sysname = sysname
+    monkeypatch.setattr(instance_module.os, "uname", lambda: fake)
+
+
 def test_socket_dir_follows_the_cli_rule(monkeypatch):
     inst = VellumInstance("a", Path("/src"))
+    long_ws = Path("/w/" + "x" * 120)
+    _on(monkeypatch, "Darwin")
     monkeypatch.setattr(VellumInstance, "workspace", property(lambda self: Path("/w/ws")))
     assert inst.ipc_socket_dir == Path("/w/ws")  # short enough: the socket stays in the workspace
-    monkeypatch.setattr(VellumInstance, "workspace", property(lambda self: Path("/w/" + "x" * 120)))
-    assert inst.ipc_socket_dir.name.startswith("vellum-ipc-")  # too long: hashed tmp dir
+    monkeypatch.setattr(VellumInstance, "workspace", property(lambda self: long_ws))
+    assert inst.ipc_socket_dir.name.startswith("vellum-ipc-")  # too long on macOS: hashed tmp dir
+    _on(monkeypatch, "Linux")
+    assert inst.ipc_socket_dir == long_ws  # the hashed dir is a macOS-only rule
 
 
 def test_env_drops_inherited_instance_vars(monkeypatch):
@@ -128,8 +190,13 @@ def test_env_drops_inherited_instance_vars(monkeypatch):
 
 
 def test_reply_text_reads_the_root_span():
-    trace = {"spans": [
-        {"parent_span_id": "", "attributes": {"mlflow.spanOutputs": json.dumps({"reply": "640 dollars"})}},
-        {"parent_span_id": "abc", "attributes": {"mlflow.spanOutputs": json.dumps({"x": 1})}},
-    ]}
+    trace = {
+        "spans": [
+            {
+                "parent_span_id": "",
+                "attributes": {"mlflow.spanOutputs": json.dumps({"reply": "640 dollars"})},
+            },
+            {"parent_span_id": "abc", "attributes": {"mlflow.spanOutputs": json.dumps({"x": 1})}},
+        ]
+    }
     assert reply_text(trace) == "640 dollars"

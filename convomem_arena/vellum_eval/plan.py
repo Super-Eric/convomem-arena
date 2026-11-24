@@ -64,9 +64,7 @@ def persona_role(persona_file: str) -> str:
     return re.sub(r"^[0-9a-f-]{36}_", "", persona_file).removesuffix(".json").replace("_", " ")
 
 
-def _items_for(
-    source: HubSource, persona_file: str, category: str, evidence_counts: Iterable[int]
-):
+def _items_for(source: HubSource, persona_file: str, category: str, evidence_counts: Iterable[int]):
     folder, _ = CATEGORIES[category]
     for n in evidence_counts:
         path = f"{EVIDENCE_ROOT}/{folder}/{n}_evidence"

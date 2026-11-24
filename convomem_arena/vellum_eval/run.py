@@ -34,11 +34,62 @@ from convomem_arena.vellum_eval.judge import JudgeEndpoint, judge_answer
 from convomem_arena.vellum_eval.plan import EvalPlan, build_plan, import_payload
 
 FACT_CATEGORIES = {"user_facts", "assistant_facts", "changing_facts"}
-STOP = set(
-    "the a an and or of to in on for with at by from is are was were be been it its this "
-    "that your you my our their his her they them there what which who whom when where "
-    "how why should would could can will just also than then into about over".split()
-)
+STOP = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "of",
+    "to",
+    "in",
+    "on",
+    "for",
+    "with",
+    "at",
+    "by",
+    "from",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "it",
+    "its",
+    "this",
+    "that",
+    "your",
+    "you",
+    "my",
+    "our",
+    "their",
+    "his",
+    "her",
+    "they",
+    "them",
+    "there",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "when",
+    "where",
+    "how",
+    "why",
+    "should",
+    "would",
+    "could",
+    "can",
+    "will",
+    "just",
+    "also",
+    "than",
+    "then",
+    "into",
+    "about",
+    "over",
+}
 
 
 def key_terms(answer: str, question: str = "") -> list[str]:
@@ -47,6 +98,7 @@ def key_terms(answer: str, question: str = "") -> list[str]:
     Gold answers often restate the question ("Your go-to spot for a casual weeknight
     dinner is Siam Spice"); only the new words ("siam", "spice") show the fact.
     """
+
     def words(text: str) -> list[str]:
         raw = re.findall(r"[a-z0-9$][a-z0-9$.:'-]*", text.lower())
         return [w.strip(".:'-") for w in raw]
@@ -73,7 +125,11 @@ def pick_persona(source: HubSource, needle: str) -> str:
 
 
 def stage_build(inst: VellumInstance, plan: EvalPlan, out: Path, args) -> dict:
-    snapshot = out.parent / "snapshots" / f"{plan.persona_file.removesuffix('.json')}-s{plan.seed}-h{len(plan.history)}.vbundle"
+    snapshot = (
+        out.parent
+        / "snapshots"
+        / f"{plan.persona_file.removesuffix('.json')}-s{plan.seed}-h{len(plan.history)}.vbundle"
+    )
     if args.reuse_snapshot and snapshot.exists():
         inst.restore(snapshot)
         return {"reused_snapshot": str(snapshot)}
@@ -127,11 +183,16 @@ def stage_ask(inst: VellumInstance, plan: EvalPlan, run_id: str) -> list[dict]:
         except Exception as err:  # noqa: BLE001 - recorded per question
             row["error"] = str(err)[-300:]
         answers.append(row)
-        print(f"  asked {i}/{len(plan.questions)} {q.category} ({row.get('seconds', '?')}s)", flush=True)
+        print(
+            f"  asked {i}/{len(plan.questions)} {q.category} ({row.get('seconds', '?')}s)",
+            flush=True,
+        )
     return answers
 
 
-def stage_score(inst: VellumInstance, plan: EvalPlan, answers: list[dict], judge: JudgeEndpoint) -> list[dict]:
+def stage_score(
+    inst: VellumInstance, plan: EvalPlan, answers: list[dict], judge: JudgeEndpoint
+) -> list[dict]:
     pages = inst.concept_pages()
     all_pages = "\n".join(pages.values())
     by_id = {q.id: q for q in plan.questions}
@@ -178,10 +239,12 @@ def report(plan: EvalPlan, build: dict, scores: list[dict]) -> str:
     lines = [
         f"# Vellum on ConvoMem: {plan.persona_role}",
         "",
-        f"History: {len(plan.history)} conversations "
-        f"({sum(h.is_evidence for h in plan.history)} evidence). "
-        f"Concept pages after build: {build.get('concept_pages', '?')}. "
-        f"Build time: {build.get('seconds', '?')} s.",
+        (
+            f"History: {len(plan.history)} conversations "
+            f"({sum(h.is_evidence for h in plan.history)} evidence). "
+            f"Concept pages after build: {build.get('concept_pages', '?')}. "
+            f"Build time: {build.get('seconds', '?')} s."
+        ),
         "",
         "| category | judged right | answer in memory | answer in injection |",
         "|---|---|---|---|",
@@ -197,9 +260,11 @@ def report(plan: EvalPlan, build: dict, scores: list[dict]) -> str:
     if isinstance(pages, int) and pages < 10:
         lines += [
             "",
-            f"> Note: only {pages} concept pages. Below 10, memory v3 runs its lean profile "
-            "(no selector, no dense lane; every pooled line is injected), so this run does "
-            "not exercise the selector.",
+            (
+                f"> Note: only {pages} concept pages. Below 10, memory v3 runs its lean profile "
+                "(no selector, no dense lane; every pooled line is injected), so this run does "
+                "not exercise the selector."
+            ),
         ]
     return "\n".join(lines) + "\n"
 
@@ -220,9 +285,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--reuse-snapshot", action="store_true")
     p.add_argument("--no-snapshot", action="store_true")
     p.add_argument("--out", default="outputs/vellum-eval")
-    p.add_argument(
-        "--stages", default="build,ask,score", help="comma list of build, ask, score"
-    )
+    p.add_argument("--stages", default="build,ask,score", help="comma list of build, ask, score")
     p.add_argument("--run-dir", help="resume an existing run directory (keeps its plan)")
     args = p.parse_args(argv)
     stages = set(args.stages.split(","))

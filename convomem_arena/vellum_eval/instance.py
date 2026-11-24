@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 CONSOLIDATION_JOBS = ("memory_v2_consolidate", "memory_v2_reembed", "memory_v3_maintain")
-BUFFER_ENTRY = re.compile(r"^- ", re.M)
+BUFFER_ENTRY = re.compile(r"^- ", re.MULTILINE)
 
 
 @dataclass
@@ -81,6 +81,7 @@ class VellumInstance:
         cwd = self.workspace if self.workspace.is_dir() else None
         proc = subprocess.run(
             argv,
+            check=False,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -206,8 +207,11 @@ class VellumInstance:
                 } & wanted
                 if now_done != done:
                     done, last_change = now_done, time.time()
-                    print(f"  retrospectives done {len(done)}/{len(wanted)} "
-                          f"(buffer {self.buffer_entries()})", flush=True)
+                    print(
+                        f"  retrospectives done {len(done)}/{len(wanted)} "
+                        f"(buffer {self.buffer_entries()})",
+                        flush=True,
+                    )
                 if done >= wanted:
                     break
                 time.sleep(20)
