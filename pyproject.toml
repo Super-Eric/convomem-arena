@@ -1,13 +1,19 @@
 [project]
 name = "convomem-arena"
-version = "0.1.0"
+version = "0.1.4"
 description = "ConvoMem conversational-memory tasks: answer questions about a user's past conversations, delivered in context, through memory tools, or as files (official ConvoMem LLM judges)."
 tags = ["memory", "long-context", "multi-turn", "tool-use", "llm-judge", "eval", "train", "v1"]
+authors = [{ name = "Sajjadur Rahman", email = "rahmansunny071@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "verifiers>=0.4.1",
     "huggingface-hub>=0.34.0",
 ]
+
+[project.urls]
+Homepage = "https://sajjadur.net/"
+Documentation = "https://rahmansunny071.github.io/convomem-arena/"
+Repository = "https://github.com/rahmansunny071/convomem-arena"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

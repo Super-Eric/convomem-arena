@@ -63,6 +63,12 @@ The full documentation is at **<https://rahmansunny071.github.io/convomem-arena/
 
 To preview the site locally: `uv pip install -e ".[docs]" && uv run mkdocs serve`.
 
+## A note on exact-match scoring
+
+`--env.taskset.task.fact-scoring exact_match` is meant as a **cheap sanity check**: with no judge endpoint and no cost, it shows that the environment runs end to end and that a model's replies contain the expected facts. It is not a substitute for the official ConvoMem judges. Its word-level checks can still be fooled by some hedged or padded replies ([issue #11](https://github.com/rahmansunny071/convomem-arena/issues/11)) and are stricter than the judges on paraphrase.
+
+**For any full-scale evaluation, published result or leaderboard, always use the official judges** (the default, `fact-scoring judge`), and keep the judge model fixed across compared runs.
+
 ## Citation and license
 
 If you use this environment, please cite ConvoMem:

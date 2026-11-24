@@ -6,10 +6,18 @@ reply matches when it contains the answer's **details**: its names and numbers t
 question doesn't already contain ("april", "10"). Answers without names or numbers fall
 back to their content words.
 
-Two guards keep the score honest as a training reward:
+Four guards keep the score honest as a training reward:
 
 - **No dumping.** A reply far longer than the answer scores 0, so listing everything
   in the history can't collect the details by brute force.
+- **No candidate lists.** A reply offering many names or numbers that neither the answer
+  nor the question contains scores 0 (more than 8, or 3 or more making up over half of
+  its words), so a short list of the history's names can't hit the answer by chance.
+- **No hedging or denial.** A reply scores 0 when it voices doubt the answer doesn't
+  ("I don't remember", "maybe", "wrong"), when the sentences stating the answer's details
+  negate or offer alternatives ("not", "no", "or", "either", "n't") more often than the
+  answer itself does, or when a sentence of its own rejects or adds an alternative ("Nope.",
+  "That's not right.", "Or October.").
 - **No stale numbers** (`changing_facts`). A reply that also states a number from an
   earlier evidence message, one the latest message and the answer no longer contain,
   scores 0: "October 5th or April 10th" hedges instead of tracking the change. Only
@@ -23,11 +31,16 @@ ConvoMem paper; use this where a cheap, stable signal matters more.
 
 from __future__ import annotations
 
+import re
+
 from convomem_arena.text import (
+    STOP,
     content_words,
     coverage,
+    fold,
     is_number,
     key_terms,
+    numbers,
     present,
     specifics,
     words,
@@ -42,6 +55,34 @@ MAX_LENGTH_FACTOR = 5
 MIN_LENGTH_ALLOWANCE = 100
 """A reply may use up to max(100, 5 × the answer's length) words before it counts as
 dumping. Correct replies often cite where they found the answer; dumps run to hundreds."""
+
+MAX_EXTRA_DETAILS = 8
+LIST_MIN_EXTRA = 3
+LIST_MAX_SHARE = 0.5
+DENSE_MIN_EXTRA = 2
+DENSE_SHARE = 0.75
+BARE_MIN_EXTRA = 3
+BARE_STOP_SHARE = 0.15
+"""A reply is a list of candidates rather than an answer when it holds more than 8 names or
+numbers the answer and question lack, or 3 or more of them making up over half of its
+words, or 2 or more in a reply that is at least 75% names and numbers ("Liam Petrov, Acme,
+Boston"), or 3 or more new content words with almost no function words, in any case
+("liam petrov sarah acme boston"). A sentence around the names ("Liam Petrov, from Acme
+Corp in Boston.") passes."""
+
+_DOUBT = re.compile(
+    r"\b(?:(?:do|did|can|could)(?:n't| not)|cannot|i'?m not|not)\s+"
+    r"(?:know|remember|recall|tell|think|sure|certain|be sure)\b"
+    r"|\b(?:unsure|uncertain|maybe|perhaps|possibly|probably|guess|guessing|wrong|incorrect)\b"
+)
+_NEGATION = re.compile(r"\b(?:not|no|never|nor|or|either|neither)\b|n't\b")
+_REJECTION = re.compile(
+    r"^(?:no|nope|nah|wrong|incorrect)\b\W*(?:$|,)"
+    r"|^(?:that|this|it)(?:'s| is|s)? not (?:it|right|correct|true|the answer)\b"
+    r"|^not (?:it|right|correct|true|quite)\b"
+    r"|^or\b"
+)
+"""Doubt the gold answer doesn't voice; negation or alternatives; a sentence that rejects."""
 
 
 def answer_details(answer: str, question: str) -> list[str]:
@@ -59,6 +100,60 @@ def stale_details(answer: str, question: str, evidence_messages: list[str]) -> l
     return [d for d in earlier if d not in keep and is_number(d)]
 
 
+def _plain(text: str) -> str:
+    """Lowercased and folded, curly apostrophes made straight, for the phrase checks."""
+    return fold(text).lower().replace("\u2019", "'")
+
+
+def _sentences(text: str) -> list[str]:
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", _plain(text)) if s.strip()]
+
+
+def extra_details(response: str, answer: str, question: str) -> list[str]:
+    """Names and numbers in `response` that neither `answer` nor `question` contains,
+    counting those that open a short line or list item."""
+    known = set(words(answer)) | numbers(answer) | set(words(question)) | numbers(question)
+    return [d for d in specifics(response, short_starts=True) if d not in known]
+
+
+def is_candidate_list(response: str, answer: str, question: str) -> bool:
+    extra = extra_details(response, answer, question)
+    size = len(words(response))
+    if len(extra) > MAX_EXTRA_DETAILS:
+        return True
+    if len(extra) >= LIST_MIN_EXTRA and len(extra) > LIST_MAX_SHARE * size:
+        return True
+    named = sum(len(words(d)) for d in specifics(response, short_starts=True))
+    if len(extra) >= DENSE_MIN_EXTRA and named >= DENSE_SHARE * size:
+        return True
+    # a list in lower case has no capitalised names to count, but no sentence either
+    known = set(words(answer)) | set(words(question))
+    new_terms = [w for w in content_words(response) if w not in known]
+    function_words = sum(w in STOP for w in words(response))
+    return len(new_terms) >= BARE_MIN_EXTRA and function_words < BARE_STOP_SHARE * size
+
+
+def hedges(response: str, answer: str, details: list[str], terms: list[str]) -> bool:
+    """True when `response` doubts, denies or hedges what `answer` states plainly."""
+    gold = _plain(answer)
+    if _DOUBT.search(_plain(response)) and not _DOUBT.search(gold):
+        return True
+    gold_rejects = any(_REJECTION.search(s) for s in _sentences(answer))
+    if not gold_rejects and any(_REJECTION.search(s) for s in _sentences(response)):
+        return True
+    # negation or alternatives in the sentences stating the answer, beyond what it has itself
+    allowed = len(_NEGATION.findall(gold))
+    stated = 0
+    for sentence in _sentences(response):
+        if details:
+            states = bool(present(details, sentence))
+        else:
+            states = bool(terms) and coverage(terms, sentence) >= 0.5
+        if states:
+            stated += len(_NEGATION.findall(sentence))
+    return stated > allowed
+
+
 def exact_match(
     response: str,
     answer: str,
@@ -72,7 +167,10 @@ def exact_match(
     limit = max(MIN_LENGTH_ALLOWANCE, MAX_LENGTH_FACTOR * len(words(answer)))
     if len(words(response)) > limit:
         return 0.0
+    if is_candidate_list(response, answer, question):
+        return 0.0
     details = answer_details(answer, question)
+    terms: list[str] = []
     if details:
         if len(present(details, response)) < len(details):
             return 0.0
@@ -80,6 +178,8 @@ def exact_match(
         terms = key_terms(answer, question) or content_words(answer)
         if coverage(terms, response) < KEY_TERM_THRESHOLD:
             return 0.0
+    if hedges(response, answer, details, terms):
+        return 0.0
     if category == "changing_facts" and present(
         stale_details(answer, question, evidence_messages or []), response
     ):
