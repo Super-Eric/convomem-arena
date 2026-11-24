@@ -30,5 +30,5 @@ for line in open(sys.argv[1]):
     acc[(d["category"], d["context_size"])].append(t["rewards"]["correct"]["score"])
 
 for (cat, size), xs in sorted(acc.items()):
-    print(f"{cat:<22} ctx={size:<4} acc={sum(xs)/len(xs):.3f} n={len(xs)}")
+    print(f"{cat:<22} ctx={size:<4} acc={sum(xs) / len(xs):.3f} n={len(xs)}")
 ```

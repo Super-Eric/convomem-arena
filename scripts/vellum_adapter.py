@@ -109,6 +109,7 @@ def _call_vellum(message: str, system_prompt: str) -> dict:
     try:
         proc = subprocess.run(
             cmd,
+            check=False,
             cwd=ASSISTANT_DIR,
             env=os.environ.copy(),  # inherit ASSISTANT_IPC_SOCKET_DIR / VELLUM_WORKSPACE_DIR
             capture_output=True,
@@ -141,11 +142,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _openai_error(self, status: int, message: str, error_type: str = "vellum_adapter_error") -> None:
+    def _openai_error(
+        self, status: int, message: str, error_type: str = "vellum_adapter_error"
+    ) -> None:
         self._send_json(status, {"error": {"message": message, "type": error_type}})
 
     def _send_sse_completion(
-        self, completion_id: str, model: str, content: str, prompt_tokens: int, completion_tokens: int
+        self,
+        completion_id: str,
+        model: str,
+        content: str,
+        prompt_tokens: int,
+        completion_tokens: int,
     ) -> None:
         """Fake a streamed response: OpenAI clients (incl. the one `vf-run` uses)
         default to `stream=True` and parse the reply as SSE `chat.completion.chunk`
@@ -164,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                 "model": model,
                 "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
             }
-            return f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+            return f"data: {json.dumps(payload)}\n\n".encode()
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -175,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
 
-    def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler API)
+    def do_POST(self) -> None:
         if self.path.rstrip("/") != "/v1/chat/completions":
             self._openai_error(404, f"no such route: {self.path}", "not_found")
             return
@@ -217,7 +225,9 @@ class Handler(BaseHTTPRequestHandler):
         content = result.get("response", "")
 
         if request.get("stream"):
-            self._send_sse_completion(completion_id, model, content, prompt_tokens, completion_tokens)
+            self._send_sse_completion(
+                completion_id, model, content, prompt_tokens, completion_tokens
+            )
             return
 
         response = {
@@ -240,7 +250,7 @@ class Handler(BaseHTTPRequestHandler):
         }
         self._send_json(200, response)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path.rstrip("/") == "/v1/models":
             model_id = VELLUM_MODEL_OVERRIDE or "vellum"
             self._send_json(200, {"object": "list", "data": [{"id": model_id, "object": "model"}]})
@@ -263,7 +273,9 @@ def main() -> None:
     print(f"[vellum-adapter] VELLUM_ASSISTANT_DIR={ASSISTANT_DIR}")
     print(f"[vellum-adapter] ASSISTANT_IPC_SOCKET_DIR={os.environ.get('ASSISTANT_IPC_SOCKET_DIR')}")
     print(f"[vellum-adapter] VELLUM_WORKSPACE_DIR={os.environ.get('VELLUM_WORKSPACE_DIR')}")
-    print(f"[vellum-adapter] VELLUM_PROFILE={VELLUM_PROFILE_OVERRIDE!r}  VELLUM_MODEL={VELLUM_MODEL_OVERRIDE!r}")
+    print(
+        f"[vellum-adapter] VELLUM_PROFILE={VELLUM_PROFILE_OVERRIDE!r}  VELLUM_MODEL={VELLUM_MODEL_OVERRIDE!r}"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
