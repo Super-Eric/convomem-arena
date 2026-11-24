@@ -13,6 +13,9 @@ description: "The reward, ConvoMem's official per-category judges, and the retri
 
 ## Exact match for fact categories
 
+!!! warning "A sanity check, not a benchmark score"
+    Exact match is meant as a **cheap sanity check** that the environment runs end to end and that replies contain the expected facts, with no judge endpoint and no cost. **For any full-scale evaluation, published result or leaderboard, always use the official judges** (the default, `fact-scoring judge`), and keep the judge model fixed across compared runs.
+
 The official judges make scores comparable with the ConvoMem paper, but each one is a model call: it costs time and money, needs an endpoint, and can vary between runs. For `user_facts`, `assistant_facts` and `changing_facts` there is a deterministic alternative.
 
 ConvoMem's gold answers are full sentences, so a literal comparison almost never matches. Instead a reply **matches when it contains the answer's details**: the names and numbers the question doesn't already contain. *"The concert has been postponed to April 10th of next year"* needs `april` and `10`. Answers with no names or numbers fall back to their content words. The answer and the reply are read the same way: accents are dropped (*Brené* = *Brene*), dotted abbreviations closed (*a.m.* = *AM*), letters split from digits (*XY123456* = *XY 123456*), and numbers are compared only with numbers (*$2,100* is 2100, not 2 and 100).
@@ -49,7 +52,7 @@ The other three categories always use their judge: abstention and the two rubric
 | (another answer); gold | 96.2% → 89.2% |
 | every name and number of the evidence conversation, up to 100 words | 49.6% → 16.0% (23.2% in lower case) |
 
-What it still can't do: tell an alternative from extra detail when nothing marks it (a bare *"W; R"*), catch a denial worded in a way the phrase lists don't cover, or stop a short list padded with function words. A word-level check cannot reliably separate a denial from ordinary text. **Prefer the judges when the reward will be optimized against**, or treat exact match as a cheap metric beside them. The judge-robustness miss also still holds: in *"a Caprese salad, a tomato basil pasta sauce and pesto"* only "Caprese" is a name, so a reply that gets the other two dishes wrong still passes.
+What it still can't do: tell an alternative from extra detail when nothing marks it (a bare *"W; R"*), catch a denial worded in a way the phrase lists don't cover, or stop a short list padded with function words. A word-level check cannot reliably separate a denial from ordinary text, which is why exact match is a sanity check: use the official judges for full-scale evaluation, for leaderboards, and whenever a reward will be optimized against. The judge-robustness miss also still holds: in *"a Caprese salad, a tomato basil pasta sauce and pesto"* only "Caprese" is a name, so a reply that gets the other two dishes wrong still passes.
 
 ## Judges
 

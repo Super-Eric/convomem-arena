@@ -24,7 +24,7 @@ All fields are CLI flags (snake_case → kebab-case) and can also be set in TOML
 |---|---|---|---|
 | `memory-mode` | `context` \| `tools` \| `files` | `context` | How the history reaches the agent |
 | `max-turns` | int ≥ 1 | `40` | Model calls per rollout before `turn_limit` stops it |
-| `fact-scoring` | `judge` \| `exact_match` | `judge` | How the three fact categories are rewarded: the official judge, or the deterministic [exact match](../concepts/scoring.md#exact-match-for-fact-categories) with no judge call |
+| `fact-scoring` | `judge` \| `exact_match` | `judge` | How the three fact categories are rewarded: the official judge, or the deterministic [exact match](../concepts/scoring.md#exact-match-for-fact-categories) with no judge call, a cheap sanity check only; use `judge` for full-scale evaluation and leaderboards |
 | `judge.model` | str | verifiers default | Judge model |
 | `judge.base-url` | str | Prime Inference | OpenAI-compatible judge endpoint |
 | `judge.api-key-var` | str | `PRIME_API_KEY` | Name of the env var that holds the judge key |
