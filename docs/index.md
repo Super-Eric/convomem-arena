@@ -19,6 +19,8 @@ The same tasks reach the agent in three ways, so you can measure **long-context 
 
 Answers are graded by **ConvoMem's official RIGHT/WRONG judges**, one per category, and in `tools` mode the environment also measures **whether the agent actually retrieved the evidence**.
 
+It is published on the Prime Intellect Environments Hub as **[`memcova/convomem-arena`](https://app.primeintellect.ai/dashboard/environments/memcova/convomem-arena)**; the source is on [GitHub](https://github.com/rahmansunny071/convomem-arena).
+
 ## Get started
 
 <div class="grid cards" markdown>

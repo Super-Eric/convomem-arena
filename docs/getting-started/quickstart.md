@@ -9,12 +9,28 @@ You need Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 
 ## 1. Install
 
-```bash
-git clone https://github.com/rahmansunny071/convomem-arena.git
-cd convomem-arena
-uv venv --python 3.12
-uv pip install -e ".[dev]"
-```
+=== "Environments Hub"
+
+    Install the published package, [`memcova/convomem-arena`](https://app.primeintellect.ai/dashboard/environments/memcova/convomem-arena), with the [prime CLI](https://github.com/PrimeIntellect-ai/prime-cli):
+
+    ```bash
+    uv tool install prime
+    uv venv --python 3.12 && source .venv/bin/activate
+    prime env install memcova/convomem-arena
+    ```
+
+    Or with pip alone: `uv pip install convomem_arena --extra-index-url https://hub.primeintellect.ai/memcova/convomem-arena/install/simple/`. Run the commands below without `uv run`.
+
+=== "From source"
+
+    ```bash
+    git clone https://github.com/rahmansunny071/convomem-arena.git
+    cd convomem-arena
+    uv venv --python 3.12
+    uv pip install -e ".[dev]"
+    ```
+
+    The source also holds the docs, the quality checkers and the personal-assistant evaluation, which the Hub package leaves out.
 
 ## 2. Check that tasks load
 
