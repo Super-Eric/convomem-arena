@@ -1,0 +1,64 @@
+name: CI
+
+# Tests, lint and a strict docs build on every pull request and every push to main.
+# All tests run offline (no model, network or API key), so no secrets are needed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Ruff's default rule set changes between releases; pin it so CI and local runs agree.
+  RUFF_VERSION: "0.17.4"
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --python ${{ matrix.python }}
+      - name: Run tests
+        run: uv run --no-sync pytest -q
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: ruff check
+        run: uvx ruff@${{ env.RUFF_VERSION }} check .
+      - name: ruff format
+        run: uvx ruff@${{ env.RUFF_VERSION }} format --check .
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install (locked)
+        run: uv sync --locked --extra docs --python 3.12
+      - name: mkdocs build --strict
+        run: uv run --no-sync mkdocs build --strict
+        env:
+          NO_MKDOCS_2_WARNING: "1"
