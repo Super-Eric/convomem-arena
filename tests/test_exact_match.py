@@ -237,3 +237,74 @@ def test_hyphenated_and_possessive_names_the_question_holds_are_not_required_aga
         "james",
         "clear",
     ]
+
+
+# --- doubt with "can't", a denial before the answer, long answers without names -------------
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I can't remember. April 10th next year.",
+        "I can't tell. April 10th next year.",
+        "No idea. April 10th next year.",
+        "It is not this. April 10th next year.",  # the denial sits in a sentence of its own
+        "Either this or that. April 10th next year.",
+    ],
+)
+def test_doubt_or_denial_before_the_answer_scores_zero(reply):
+    assert exact_match(reply, GOLD, Q, "changing_facts", EVIDENCE) == 0.0
+
+
+def test_doubt_the_question_voices_may_be_echoed():
+    q = "I can't recall the exact day. When is The National concert now?"
+    assert exact_match(q + " " + GOLD, GOLD, q, "changing_facts", EVIDENCE) == 1.0
+    assert exact_match("I can't recall. " + GOLD, GOLD, Q, "changing_facts", EVIDENCE) == 0.0
+
+
+def test_a_rejecting_sentence_with_isnt_scores_zero():
+    assert exact_match("Liam Petrov. That isn't it.", LGOLD, LQ, "user_facts") == 0.0
+    assert exact_match("Liam Petrov. That's right.", LGOLD, LQ, "user_facts") == 1.0
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "No problem! April 10th next year.",
+        "Not a problem! April 10th next year.",
+        "Sure, here it is: April 10th next year.",
+        "Either way, here is what you told me. April 10th next year.",
+        "From what you told me, or at least how I remember it. April 10th next year.",
+        "Do you mean the concert or the tour? April 10th next year.",  # a question asked back
+    ],
+)
+def test_friendly_openers_still_score(reply):
+    assert exact_match(reply, GOLD, Q, "changing_facts", EVIDENCE) == 1.0
+
+
+PQ = "How should I plan my Saturday morning?"
+PGOLD = (
+    "Have breakfast at the small family restaurant. Walk through the quiet garden after that. "
+    "Browse the old bookstore before lunch."
+)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Not " + PGOLD,
+        "Either have breakfast at the small family restaurant or skip it. "
+        + PGOLD.split(". ", 1)[1],
+    ],
+)
+def test_denials_of_a_long_answer_without_names_score_zero(reply):
+    assert exact_match(PGOLD, PGOLD, PQ, "user_facts") == 1.0
+    assert exact_match(reply, PGOLD, PQ, "user_facts") == 0.0
+
+
+def test_a_long_answer_without_names_restated_still_scores():
+    reply = (
+        "Have breakfast at the small family restaurant, then walk through the quiet garden "
+        "and browse the old bookstore before lunch."
+    )
+    assert exact_match(reply, PGOLD, PQ, "user_facts") == 1.0
