@@ -2,6 +2,8 @@
 
 **A conversational-memory environment for agentic systems, built on [verifiers](https://github.com/PrimeIntellect-ai/verifiers) v1 for the Prime Intellect Environments Hub.**
 
+**Environments Hub:** [`memcova/convomem-arena`](https://app.primeintellect.ai/dashboard/environments/memcova/convomem-arena) · **Docs:** <https://rahmansunny071.github.io/convomem-arena/>
+
 convomem-arena turns [Salesforce ConvoMem](https://huggingface.co/datasets/Salesforce/ConvoMem) ([paper](https://arxiv.org/abs/2511.10523), [reference code](https://github.com/SalesforceAIResearch/ConvoMem)) into tasks for evaluation and RL. Each task asks a question about a user's earlier conversations with the assistant: a fact the user stated, something the assistant recommended, a detail that later changed, a preference to respect, or something that was never said at all. The agent has to find the answer in a history that also contains many unrelated conversations from the same person.
 
 The same tasks can reach the agent in three ways. That lets you measure **long-context recall** and **agentic memory use** on identical data:
@@ -33,6 +35,8 @@ export PRIME_API_KEY=...
 uv run vf-run convomem-arena -n 6 -r 1 -m <model> \
   --env.agent.harness.id null --env.agent.runtime.type subprocess
 ```
+
+**Or install from the [Environments Hub](https://app.primeintellect.ai/dashboard/environments/memcova/convomem-arena)** without cloning: `prime env install memcova/convomem-arena` (with the [prime CLI](https://github.com/PrimeIntellect-ai/prime-cli)), then run the same `vf-validate` / `vf-run` commands without `uv run`.
 
 `-n 6` already covers all six categories. **No API key?** The [quick start](docs/getting-started/quickstart.md#run-fully-local-with-ollama) also shows a fully local run with Ollama, using one model as both agent and judge.
 
